@@ -25,10 +25,14 @@ A fully automated Telegram bot that posts daily quizzes, tracks student response
 - Single message format for easy reading
 
 ✅ **Admin Commands**
-- `/addquiz` - Interactive quiz addition with image upload
+- `/addquiz` - Interactive quiz addition with review/edit before saving
+- `/editquiz` - Edit existing quiz questions
+- `/viewquiz` - View quiz details with highlighted correct answer
+- `/menu` - Interactive button menu with emoji icons
 - `/day` - View detailed daily statistics
 - `/week` - View detailed weekly statistics
 - Admin-only access with authorization
+- All admin commands work only in private chat with bot
 
 ✅ **Robust Data Storage**
 - SQLite database for reliability
@@ -91,21 +95,50 @@ A fully automated Telegram bot that posts daily quizzes, tracks student response
 
 ### For Admins
 
+**Note:** All admin commands work only in **private chat** with the bot, not in the group.
+
+#### Quick Access Menu
+
+Use `/menu` to get an interactive button menu with all admin options:
+- ➕ Add Quiz
+- ✏️ Edit Quiz  
+- 👁️ View Quiz
+- 📊 Today's Stats
+- 📅 Week's Stats
+- ❓ Help
+
 #### Adding a New Quiz
 
-Use the `/addquiz` command and follow the interactive prompts:
+Use the `/addquiz` command in private chat:
 
-1. Send `/addquiz`
+1. Send `/addquiz` to the bot
 2. Enter the question text
-3. Upload the quiz image
-4. Enter Option A
-5. Enter Option B
-6. Enter Option C
-7. Enter Option D
-8. Select the correct answer (A, B, C, or D)
-9. Choose the slot (Morning or Evening)
+3. Enter Option A, B, C, D
+4. Select the correct answer
+5. Upload the quiz image
+6. Choose the slot (Morning or Evening)
+7. **Review** all details on the summary screen
+8. Edit any field if needed or confirm to save
 
 The quiz will be queued and posted automatically at the scheduled time.
+
+#### Editing an Existing Quiz
+
+Use `/editquiz` to modify saved quizzes:
+
+1. Send `/editquiz`
+2. Enter the Quiz ID
+3. Review screen shows all current details
+4. Click any field to edit it
+5. Confirm to save changes
+
+#### Viewing Quiz Details
+
+Use `/viewquiz` to see quiz information:
+
+1. Send `/viewquiz`
+2. Enter the Quiz ID
+3. Bot displays question, options (with ✅ on correct answer), date, and slot
 
 #### Viewing Statistics
 
@@ -183,6 +216,8 @@ telegram-quiz-bot/
 │   ├── __init__.py
 │   ├── time_utils.py          # Time and date utilities
 │   ├── constants.py           # Constants and templates
+│   ├── decorators.py          # Admin authorization decorator
+│   ├── formatters.py          # Message formatting utilities
 │   ├── leaderboard.py         # Leaderboard calculations
 │   └── reports.py             # Report generation
 └── quiz_images/               # Stored quiz images
