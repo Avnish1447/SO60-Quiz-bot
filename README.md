@@ -4,8 +4,24 @@ A fully automated Telegram bot that posts daily quizzes, tracks student response
 
 ## Features
 
+### 🆕 What's New in v2.0
+
+⏰ **Dynamic Slot Management**
+- Add, edit, and delete quiz time slots on the fly
+- No need to restart the bot - scheduler updates automatically
+- Send surprise quizzes instantly
+- Manage unlimited custom time slots (morning, afternoon, evening, etc.)
+
+📋 **Enhanced Quiz Viewing**
+- Browse quizzes with interactive list selection
+- Navigate between quizzes with Previous/Next buttons
+- Quick edit access directly from quiz view
+- Delete quizzes with confirmation dialog
+
+### Core Features
+
 ✅ **Automated Quiz Posting**
-- Two quizzes per day (9 AM and 6 PM IST)
+- Customizable quiz slots (default: 9 AM and 6 PM IST)
 - Each quiz includes question text, image, and 4 options
 - Uses Telegram's native quiz polls
 
@@ -27,7 +43,8 @@ A fully automated Telegram bot that posts daily quizzes, tracks student response
 ✅ **Admin Commands**
 - `/addquiz` - Interactive quiz addition with review/edit before saving
 - `/editquiz` - Edit existing quiz questions
-- `/viewquiz` - View quiz details with highlighted correct answer
+- `/viewquiz` - View quiz list with navigation (Previous/Next/Edit/Delete buttons)
+- `/editslots` - **NEW in v2.0** - Manage quiz time slots dynamically
 - `/menu` - Interactive button menu with emoji icons
 - `/day` - View detailed daily statistics
 - `/week` - View detailed weekly statistics
@@ -134,11 +151,41 @@ Use `/editquiz` to modify saved quizzes:
 
 #### Viewing Quiz Details
 
-Use `/viewquiz` to see quiz information:
+Use `/viewquiz` to browse and manage quizzes:
 
 1. Send `/viewquiz`
-2. Enter the Quiz ID
-3. Bot displays question, options (with ✅ on correct answer), date, and slot
+2. Select a quiz from the interactive list
+3. Bot displays full quiz details with navigation buttons:
+   - ⬅️ **Previous** - View previous quiz
+   - ✏️ **Edit** - Edit current quiz
+   - ➡️ **Next** - View next quiz
+   - 🗑️ **Delete** - Delete quiz (with confirmation)
+   - ❌ **Close** - Exit viewer
+
+#### Managing Quiz Time Slots (NEW in v2.0)
+
+Use `/editslots` to manage when quizzes are posted:
+
+**Add New Slot:**
+1. Send `/editslots`
+2. Click "➕ Add New Slot"
+3. Enter slot name (e.g., "afternoon")
+4. Enter hour (0-23) and minute (0-59)
+5. Scheduler updates automatically!
+
+**Edit Existing Slot:**
+1. Click "✏️ Edit Slot"
+2. Select the slot to modify
+3. Enter new time
+4. Changes apply immediately
+
+**Delete Slot:**
+1. Click "🗑️ Remove Slot"
+2. Select slot to remove
+3. Confirm deletion (cannot delete last slot)
+
+**Send Surprise Quiz:**
+- Click "⚡ Send Surprise Quiz" to post a quiz immediately
 
 #### Viewing Statistics
 
@@ -183,14 +230,28 @@ Use `/viewquiz` to see quiz information:
 - date
 ```
 
+### Slots Config Table (NEW in v2.0)
+```sql
+- slot_id (PRIMARY KEY)
+- slot_name (unique)
+- hour (0-23)
+- minute (0-59)
+- is_active (0 or 1)
+- created_at
+```
+
 ## Scheduling
+
+**Default Schedule:**
 
 | Time | Action |
 |------|--------|
-| 9:00 AM IST | Post morning quiz |
-| 6:00 PM IST | Post evening quiz |
+| 9:00 AM IST | Post morning quiz (customizable) |
+| 6:00 PM IST | Post evening quiz (customizable) |
 | 12:00 AM IST | Send combined daily + weekly leaderboard |
 | Monday 12:00 AM | Weekly leaderboard resets automatically |
+
+**Note:** Quiz posting times are now fully customizable via `/editslots`. Add as many slots as you need!
 
 ## Project Structure
 
