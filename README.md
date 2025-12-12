@@ -342,7 +342,4 @@ For issues or questions, please check:
 1. This README
 2. The `.env.example` file for configuration
 3. Console logs for error messages
-
 ---
-
-**Built with ❤️ for JEE Simplified**
