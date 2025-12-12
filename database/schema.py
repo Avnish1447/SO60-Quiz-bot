@@ -46,3 +46,14 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_questions_date ON questions(date);",
     "CREATE INDEX IF NOT EXISTS idx_questions_week_number ON questions(week_number);",
 ]
+
+CREATE_SLOTS_CONFIG_TABLE = """
+CREATE TABLE IF NOT EXISTS slots_config (
+    slot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slot_name TEXT UNIQUE NOT NULL,
+    hour INTEGER NOT NULL CHECK(hour >= 0 AND hour <= 23),
+    minute INTEGER NOT NULL CHECK(minute >= 0 AND minute <= 59),
+    is_active INTEGER DEFAULT 1 CHECK(is_active IN (0, 1)),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
