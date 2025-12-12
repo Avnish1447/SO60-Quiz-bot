@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
 import config
-from database.schema import CREATE_QUESTIONS_TABLE, CREATE_RESPONSES_TABLE, CREATE_INDEXES
+from database.schema import CREATE_QUESTIONS_TABLE, CREATE_RESPONSES_TABLE, CREATE_INDEXES, CREATE_SLOTS_CONFIG_TABLE
 
 
 class DatabaseManager:
@@ -31,10 +31,17 @@ class DatabaseManager:
         # Create tables
         cursor.execute(CREATE_QUESTIONS_TABLE)
         cursor.execute(CREATE_RESPONSES_TABLE)
+        cursor.execute(CREATE_SLOTS_CONFIG_TABLE)
         
         # Create indexes
         for index_sql in CREATE_INDEXES:
             cursor.execute(index_sql)
+        
+        # Initialize default slots if table is empty
+        cursor.execute("SELECT COUNT(*) FROM slots_config")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT INTO slots_config (slot_name, hour, minute) VALUES ('morning', 9, 0)")
+            cursor.execute("INSERT INTO slots_config (slot_name, hour, minute) VALUES ('evening', 18, 0)")
         
         conn.commit()
         conn.close()
@@ -275,6 +282,93 @@ class DatabaseManager:
         conn.close()
         
         return total_correct, total_wrong, users
+    
+    # ==================== Slot Management Operations ====================
+    
+    def get_all_slots(self, active_only: bool = True) -> List[Dict]:
+        """Get all quiz time slots."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        if active_only:
+            cursor.execute("""
+                SELECT * FROM slots_config 
+                WHERE is_active = 1 
+                ORDER BY hour ASC, minute ASC
+            """)
+        else:
+            cursor.execute("SELECT * FROM slots_config ORDER BY hour ASC, minute ASC")
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def add_slot(self, slot_name: str, hour: int, minute: int) -> int:
+        """Add a new time slot."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                INSERT INTO slots_config (slot_name, hour, minute) 
+                VALUES (?, ?, ?)
+            """, (slot_name.lower(), hour, minute))
+            
+            slot_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            return slot_id
+        except sqlite3.IntegrityError:
+            conn.close()
+            return -1  # Slot name already exists
+    
+    def update_slot(self, slot_id: int, hour: int, minute: int) -> bool:
+        """Update slot timing."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE slots_config 
+            SET hour = ?, minute = ? 
+            WHERE slot_id = ?
+        """, (hour, minute, slot_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def delete_slot(self, slot_id: int) -> bool:
+        """Delete a slot (sets is_active to 0)."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE slots_config 
+            SET is_active = 0 
+            WHERE slot_id = ?
+        """, (slot_id,))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def get_slot_by_id(self, slot_id: int) -> Optional[Dict]:
+        """Get a specific slot by ID."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM slots_config WHERE slot_id = ?", (slot_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return dict(row)
+        return None
 
 
 # Global database instance
