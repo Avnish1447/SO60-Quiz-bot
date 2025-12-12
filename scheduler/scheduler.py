@@ -10,6 +10,7 @@ from handlers.quiz_handler import post_quiz
 from utils.reports import generate_combined_report
 from utils.time_utils import get_current_date
 from utils.constants import SLOT_MORNING, SLOT_EVENING
+from database.db_manager import db
 import config
 
 
@@ -48,33 +49,30 @@ def setup_scheduler(application):
     """
     scheduler = AsyncIOScheduler(timezone=config.TIMEZONE)
     
-    # Morning quiz at 9:00 AM IST
-    scheduler.add_job(
-        post_morning_quiz,
-        trigger=CronTrigger(
-            hour=config.MORNING_QUIZ_HOUR,
-            minute=config.MORNING_QUIZ_MINUTE,
-            timezone=config.TIMEZONE
-        ),
-        args=[application],
-        id='morning_quiz',
-        name='Post Morning Quiz',
-        replace_existing=True
-    )
+    # Load slots dynamically from database
+    slots = db.get_all_slots(active_only=True)
     
-    # Evening quiz at 6:00 PM IST
-    scheduler.add_job(
-        post_evening_quiz,
-        trigger=CronTrigger(
-            hour=config.EVENING_QUIZ_HOUR,
-            minute=config.EVENING_QUIZ_MINUTE,
-            timezone=config.TIMEZONE
-        ),
-        args=[application],
-        id='evening_quiz',
-        name='Post Evening Quiz',
-        replace_existing=True
-    )
+    for slot in slots:
+        slot_name = slot['slot_name']
+        hour = slot['hour']
+        minute = slot['minute']
+        
+        # Create a wrapper function for this slot
+        async def post_slot_quiz(context, slot=slot_name):
+            await post_quiz(context, slot)
+        
+        scheduler.add_job(
+            post_slot_quiz,
+            trigger=CronTrigger(
+                hour=hour,
+                minute=minute,
+                timezone=config.TIMEZONE
+            ),
+            args=[application],
+            id=f'{slot_name}_quiz',
+            name=f'Post {slot_name.capitalize()} Quiz',
+            replace_existing=True
+        )
     
     # Nightly report at 12:00 AM IST
     scheduler.add_job(
@@ -92,5 +90,50 @@ def setup_scheduler(application):
     
     scheduler.start()
     print("Scheduler started successfully")
+    print(f"Loaded {len(slots)} quiz slots from database")
+    
+    # Store scheduler in application context for later refresh
+    application.bot_data['scheduler'] = scheduler
     
     return scheduler
+
+
+def refresh_scheduler(application):
+    """Refresh scheduler with updated slots from database."""
+    scheduler = application.bot_data.get('scheduler')
+    
+    if not scheduler:
+        print("Scheduler not found in application context")
+        return
+    
+    # Remove all existing quiz jobs
+    for job in scheduler.get_jobs():
+        if job.id.endswith('_quiz'):
+            scheduler.remove_job(job.id)
+    
+    # Reload slots from database
+    slots = db.get_all_slots(active_only=True)
+    
+    for slot in slots:
+        slot_name = slot['slot_name']
+        hour = slot['hour']
+        minute = slot['minute']
+        
+        # Create a wrapper function for this slot
+        async def post_slot_quiz(context, slot=slot_name):
+            await post_quiz(context, slot)
+        
+        scheduler.add_job(
+            post_slot_quiz,
+            trigger=CronTrigger(
+                hour=hour,
+                minute=minute,
+                timezone=config.TIMEZONE
+            ),
+            args=[application],
+            id=f'{slot_name}_quiz',
+            name=f'Post {slot_name.capitalize()} Quiz',
+            replace_existing=True
+        )
+    
+    print(f"Scheduler refreshed with {len(slots)} slots")
