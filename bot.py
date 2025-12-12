@@ -17,18 +17,23 @@ from telegram.ext import (
 import config
 from handlers.quiz_handler import handle_poll_answer
 from handlers.admin_handler import (
-    cmd_day, cmd_week, cmd_addquiz, cmd_editquiz, cmd_viewquiz,
+    cmd_day, cmd_week, cmd_addquiz, cmd_editquiz, cmd_viewquiz, cmd_editslots,
     receive_question, receive_image,
     receive_option_a, receive_option_b, receive_option_c, receive_option_d,
     receive_correct_option, receive_slot, cancel_addquiz, handle_review_action,
-    receive_quiz_id, view_quiz_details
+    receive_quiz_id, view_quiz_details, view_quiz_selection,
+    handle_slot_action, receive_slot_name, receive_slot_hour, receive_slot_minute,
+    select_slot_to_edit, update_slot_timing, select_slot_to_delete, cancel_slot_edit,
+    handle_quiz_navigation, confirm_quiz_deletion
 )
 from utils.constants import (
     STATE_WAITING_QUESTION, STATE_WAITING_IMAGE,
     STATE_WAITING_OPTION_A, STATE_WAITING_OPTION_B,
     STATE_WAITING_OPTION_C, STATE_WAITING_OPTION_D,
     STATE_WAITING_CORRECT, STATE_WAITING_SLOT, STATE_REVIEW_QUIZ,
-    STATE_WAITING_QUIZ_ID
+    STATE_WAITING_QUIZ_ID,
+    STATE_WAITING_SLOT_NAME, STATE_WAITING_SLOT_HOUR, STATE_WAITING_SLOT_MINUTE,
+    STATE_SELECT_SLOT_TO_EDIT, STATE_SELECT_SLOT_TO_DELETE
 )
 from scheduler.scheduler import setup_scheduler
 
@@ -67,6 +72,7 @@ async def cmd_help(update: Update, context):
         "• ➕ /addquiz - Add a new quiz question\n"
         "• ✏️ /editquiz - Edit an existing quiz\n"
         "• 👁️ /viewquiz - View an existing quiz\n"
+        "• ⏰ /editslots - Manage quiz time slots\n"
         "• 📊 /day - View today's statistics\n"
         "• 📅 /week - View this week's statistics\n\n"
         "**Quiz Schedule:**\n"
@@ -89,6 +95,7 @@ async def cmd_menu(update: Update, context):
             [InlineKeyboardButton("➕ Add Quiz", callback_data="menu_addquiz")],
             [InlineKeyboardButton("✏️ Edit Quiz", callback_data="menu_editquiz")],
             [InlineKeyboardButton("👁️ View Quiz", callback_data="menu_viewquiz")],
+            [InlineKeyboardButton("⏰ Manage Slots", callback_data="menu_editslots")],
             [InlineKeyboardButton("📊 Today's Stats", callback_data="menu_day")],
             [InlineKeyboardButton("📅 Week's Stats", callback_data="menu_week")],
             [InlineKeyboardButton("❓ Help", callback_data="menu_help")],
@@ -124,6 +131,8 @@ async def handle_menu_callback(update: Update, context):
         await query.message.reply_text("Use /editquiz to edit an existing quiz question.")
     elif action == "viewquiz":
         await query.message.reply_text("Use /viewquiz to view an existing quiz question.")
+    elif action == "editslots":
+        await query.message.reply_text("Use /editslots to manage quiz time slots.")
     elif action == "day":
         await query.message.reply_text("Use /day to view today's statistics.")
     elif action == "week":
@@ -161,6 +170,7 @@ async def post_init(application):
         BotCommand("addquiz", "➕ Add a new quiz question"),
         BotCommand("editquiz", "✏️ Edit an existing quiz question"),
         BotCommand("viewquiz", "👁️ View an existing quiz question"),
+        BotCommand("editslots", "⏰ Manage quiz time slots"),
         BotCommand("day", "📊 View today's statistics"),
         BotCommand("week", "📅 View this week's statistics"),
     ]
@@ -239,12 +249,42 @@ def main():
     viewquiz_handler = ConversationHandler(
         entry_points=[CommandHandler("viewquiz", cmd_viewquiz, filters=filters.ChatType.PRIVATE)],
         states={
-            STATE_WAITING_QUIZ_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, view_quiz_details)],
+            STATE_WAITING_QUIZ_ID: [
+                CallbackQueryHandler(view_quiz_selection, pattern="^view_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, view_quiz_details)
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel_addquiz)],
         per_chat=True
     )
     application.add_handler(viewquiz_handler)
+    
+    # Add conversation handler for /editslots
+    editslots_handler = ConversationHandler(
+        entry_points=[CommandHandler("editslots", cmd_editslots, filters=filters.ChatType.PRIVATE)],
+        states={
+            STATE_WAITING_SLOT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_slot_name)],
+            STATE_WAITING_SLOT_HOUR: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_slot_hour)],
+            STATE_WAITING_SLOT_MINUTE: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
+                    lambda u, c: receive_slot_minute(u, c) if 'new_slot_name' in c.user_data else update_slot_timing(u, c)
+                )
+            ],
+            STATE_SELECT_SLOT_TO_EDIT: [CallbackQueryHandler(select_slot_to_edit)],
+            STATE_SELECT_SLOT_TO_DELETE: [CallbackQueryHandler(select_slot_to_delete)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_slot_edit)],
+        per_chat=True
+    )
+    application.add_handler(editslots_handler)
+    
+    # Add callback handler for slot management buttons
+    application.add_handler(CallbackQueryHandler(handle_slot_action, pattern="^slot_"))
+    
+    # Add callback handlers for quiz navigation buttons
+    application.add_handler(CallbackQueryHandler(handle_quiz_navigation, pattern="^nav_"))
+    application.add_handler(CallbackQueryHandler(confirm_quiz_deletion, pattern="^confirm_delete_"))
     
     # Add poll answer handler
     application.add_handler(PollAnswerHandler(handle_poll_answer))
