@@ -3,7 +3,7 @@ Main bot file - Telegram Quiz Bot
 """
 
 import logging
-from telegram import Update, BotCommand, BotCommandScopeChat
+from telegram import Update, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
