@@ -40,7 +40,7 @@ async def post_evening_quiz(context: ContextTypes.DEFAULT_TYPE):
     await post_quiz(context, SLOT_EVENING)
 
 
-def setup_scheduler(application):
+async def setup_scheduler(application):
     """
     Set up the scheduler with all automated tasks.
     
