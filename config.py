@@ -20,10 +20,10 @@ ADMIN_IDS_STR = os.getenv('ADMIN_IDS', '')
 ADMIN_IDS = [int(id.strip()) for id in ADMIN_IDS_STR.split(',') if id.strip()]
 
 # Group Configuration
-GROUP_CHAT_ID = os.getenv('GROUP_CHAT_ID')
-if GROUP_CHAT_ID:
-    GROUP_CHAT_ID = int(GROUP_CHAT_ID)
-
+GROUP_CHAT_IDS = os.getenv('GROUP_CHAT_IDS')
+if GROUP_CHAT_IDS:
+    GROUP_CHAT_ID = [int(chat_id.strip()) for chat_id in GROUP_CHAT_IDS.split(",")]
+    
 # Database Configuration
 DATABASE_PATH = os.getenv('DATABASE_PATH', 'quiz_bot.db')
 

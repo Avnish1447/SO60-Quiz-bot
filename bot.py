@@ -3,7 +3,7 @@ Main bot file - Telegram Quiz Bot
 """
 
 import logging
-from telegram import Update, BotCommand, BotCommandScopeChat
+from telegram import Update, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -156,6 +156,10 @@ async def handle_menu_callback(update: Update, context):
 
 
 async def post_init(application):
+
+    await setup_scheduler(application)
+
+
     """Set up bot commands after initialization."""
     # Commands for regular users
     user_commands = [
@@ -290,7 +294,7 @@ def main():
     application.add_handler(PollAnswerHandler(handle_poll_answer))
     
     # Set up scheduler
-    setup_scheduler(application)
+    #setup_scheduler(application)
     
     # Start the bot
     logger.info("Starting bot...")
