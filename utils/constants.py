@@ -46,6 +46,10 @@ STATE_WAITING_SLOT_MINUTE = "waiting_slot_minute"
 STATE_SELECT_SLOT_TO_EDIT = "select_slot_to_edit"
 STATE_SELECT_SLOT_TO_DELETE = "select_slot_to_delete"
 
+
+#Quiz Date State
+STATE_WAITING_SCHEDULED_DATE = "waiting_scheduled_date"
+
 # Slot names
 SLOT_MORNING = "morning"
 SLOT_EVENING = "evening"
