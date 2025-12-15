@@ -51,7 +51,7 @@ class DatabaseManager:
     def add_question(self, question_text: str, image_file_id: str, image_local_path: str,
                     option_a: str, option_b: str, option_c: str, option_d: str,
                     correct_option: str, slot: str, week_number: int, 
-                    question_date: date) -> int:
+                    question_date: date,scheduled_date=None) -> int:
         """Add a new question to the database."""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -59,10 +59,10 @@ class DatabaseManager:
         cursor.execute("""
             INSERT INTO questions 
             (question_text, image_file_id, image_local_path, option_a, option_b, 
-             option_c, option_d, correct_option, slot, week_number, date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             option_c, option_d, correct_option, slot, week_number, date, scheduled_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (question_text, image_file_id, image_local_path, option_a, option_b, 
-              option_c, option_d, correct_option, slot, week_number, question_date))
+              option_c, option_d, correct_option, slot, week_number, question_date, scheduled_date))
         
         question_id = cursor.lastrowid
         conn.commit()
@@ -72,17 +72,32 @@ class DatabaseManager:
     
     def get_next_unposted_question(self, slot: str) -> Optional[Dict]:
         """Get the next unposted question for a given slot."""
+        from utils.time_utils import get_current_date
+        today = get_current_date()
+        
         conn = self.get_connection()
         cursor = conn.cursor()
         
+        # First try to find a quiz scheduled for today
         cursor.execute("""
             SELECT * FROM questions 
-            WHERE slot = ? AND is_posted = 0 
-            ORDER BY date ASC, question_id ASC 
+            WHERE slot = ? AND is_posted = 0 AND scheduled_date = ?
+            ORDER BY question_id ASC 
             LIMIT 1
-        """, (slot,))
+        """, (slot, today))
         
         row = cursor.fetchone()
+        
+        # If no quiz scheduled for today, get next unposted quiz
+        if not row:
+            cursor.execute("""
+                SELECT * FROM questions 
+                WHERE slot = ? AND is_posted = 0 AND (scheduled_date IS NULL OR scheduled_date <= ?)
+                ORDER BY date ASC, question_id ASC 
+                LIMIT 1
+            """, (slot, today))
+            row = cursor.fetchone()
+        
         conn.close()
         
         if row:
