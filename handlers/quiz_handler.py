@@ -175,3 +175,84 @@ async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         print(f"Recorded answer from {username}: {'Correct' if is_correct else 'Wrong'}")
     else:
         print(f"Duplicate answer from {username}")
+
+
+async def post_quiz_by_id(context: ContextTypes.DEFAULT_TYPE, question_id: int):
+    """Post a specific quiz immediately by its ID."""
+    question = db.get_question_by_id(question_id)
+    
+    if not question:
+        print(f"Quiz ID {question_id} not found")
+        return
+    
+    # Mark as posted first to avoid duplicate posting
+    posted_time = get_current_time()
+    db.mark_question_posted(question_id, posted_time)
+    
+    # Prepare quiz message
+    header = QUIZ_HEADER_MORNING if question['slot'] == SLOT_MORNING else QUIZ_HEADER_EVENING
+    question_text = header + question['question_text']
+    
+    # Prepare options
+    options = [
+        question['option_a'],
+        question['option_b'],
+        question['option_c'],
+        question['option_d']
+    ]
+    
+    # Determine correct option index
+    correct_option_index = ord(question['correct_option']) - ord('A')
+    
+    try:
+        # Send photo if available
+        if question['image_file_id']:
+            await context.bot.send_photo(
+                chat_id=config.GROUP_CHAT_ID,
+                photo=question['image_file_id'],
+                caption=question_text,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        elif question['image_local_path'] and os.path.exists(question['image_local_path']):
+            # Use local file
+            with open(question['image_local_path'], 'rb') as photo:
+                await context.bot.send_photo(
+                    chat_id=config.GROUP_CHAT_ID,
+                    photo=photo,
+                    caption=question_text,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+        else:
+            # No image, send text only
+            await context.bot.send_message(
+                chat_id=config.GROUP_CHAT_ID,
+                text=question_text,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        
+        # Send poll
+        poll_message = await context.bot.send_poll(
+            chat_id=config.GROUP_CHAT_ID,
+            question="Choose your answer:",
+            options=options,
+            type=Poll.QUIZ,
+            correct_option_id=correct_option_index,
+            is_anonymous=False,
+            allows_multiple_answers=False
+        )
+        
+        # Store quiz info
+        if 'active_quizzes' not in context.bot_data:
+            context.bot_data['active_quizzes'] = {}
+        
+        context.bot_data['active_quizzes'][poll_message.poll.id] = {
+            'question_id': question_id,
+            'posted_time': posted_time,
+            'correct_option': question['correct_option']
+        }
+        
+        print(f"Posted surprise quiz: Question ID {question_id}")
+        
+    except Exception as e:
+        print(f"Error posting surprise quiz: {e}")
+        raise  # Re-raise to trigger error handling in save_quiz
