@@ -3,7 +3,7 @@ Main bot file - Telegram Quiz Bot
 """
 
 import logging
-from telegram import Update, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, BotCommand, BotCommandScopeChat
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 
 import config
-from handlers.quiz_handler import handle_poll_answer
+from handlers.quiz_handler import handle_poll_answer, post_quiz_by_id
 from handlers.admin_handler import (
     cmd_day, cmd_week, cmd_addquiz, cmd_editquiz, cmd_viewquiz, cmd_editslots,
     receive_question, receive_image,
@@ -24,7 +24,9 @@ from handlers.admin_handler import (
     receive_quiz_id, view_quiz_details, view_quiz_selection,
     handle_slot_action, receive_slot_name, receive_slot_hour, receive_slot_minute,
     select_slot_to_edit, update_slot_timing, select_slot_to_delete, cancel_slot_edit,
-    handle_quiz_navigation, confirm_quiz_deletion
+    handle_quiz_navigation, confirm_quiz_deletion,
+    handle_schedule_choice, receive_scheduled_date,
+    handle_skip_image
 )
 from utils.constants import (
     STATE_WAITING_QUESTION, STATE_WAITING_IMAGE,
@@ -33,7 +35,8 @@ from utils.constants import (
     STATE_WAITING_CORRECT, STATE_WAITING_SLOT, STATE_REVIEW_QUIZ,
     STATE_WAITING_QUIZ_ID,
     STATE_WAITING_SLOT_NAME, STATE_WAITING_SLOT_HOUR, STATE_WAITING_SLOT_MINUTE,
-    STATE_SELECT_SLOT_TO_EDIT, STATE_SELECT_SLOT_TO_DELETE
+    STATE_SELECT_SLOT_TO_EDIT, STATE_SELECT_SLOT_TO_DELETE,
+    STATE_WAITING_SCHEDULED_DATE
 )
 from scheduler.scheduler import setup_scheduler
 
@@ -70,17 +73,29 @@ async def cmd_help(update: Update, context):
         "• ❓ /help - Show this help message\n"
         "• 🎯 /menu - Show interactive menu\n"
         "• ➕ /addquiz - Add a new quiz question\n"
+        "  - 📅 Schedule for specific date (max 7 days)\n"
+        "  - ⏭️ Post at next available slot\n"
+        "  - ⚡ Post immediately to group\n"
+        "  - 🖼️ Optional image support\n"
         "• ✏️ /editquiz - Edit an existing quiz\n"
-        "• 👁️ /viewquiz - View an existing quiz\n"
+        "• 👁️ /viewquiz - View/navigate/delete quizzes\n"
         "• ⏰ /editslots - Manage quiz time slots\n"
+        "  - Add/Edit/Delete custom time slots\n"
+        "  - Send surprise quizzes\n"
         "• 📊 /day - View today's statistics\n"
         "• 📅 /week - View this week's statistics\n\n"
         "**Quiz Schedule:**\n"
         "🌅 Morning Quiz: 9:00 AM IST\n"
-        "🌆 Evening Quiz: 6:00 PM IST\n\n"
+        "🌆 Evening Quiz: 6:00 PM IST\n"
+        "⚡ Surprise quizzes can be posted anytime!\n\n"
         "**Scoring:**\n"
         "Each quiz is worth 1 point. Tie-breaking is done by response time.\n"
-        "Weekly leaderboard resets every Monday at midnight."
+        "Weekly leaderboard resets every Monday at midnight.\n\n"
+        "**What's New in v3.0:**\n"
+        "✨ Schedule quizzes for specific dates\n"
+        "✨ Post quizzes immediately\n"
+        "✨ Optional quiz images\n"
+        "✨ Enhanced quiz navigation"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -156,10 +171,6 @@ async def handle_menu_callback(update: Update, context):
 
 
 async def post_init(application):
-
-    await setup_scheduler(application)
-
-
     """Set up bot commands after initialization."""
     # Commands for regular users
     user_commands = [
@@ -220,9 +231,16 @@ def main():
             STATE_WAITING_OPTION_C: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_option_c)],
             STATE_WAITING_OPTION_D: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_option_d)],
             STATE_WAITING_CORRECT: [CallbackQueryHandler(receive_correct_option, pattern="^correct_")],
-            STATE_WAITING_IMAGE: [MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, receive_image)],
+            STATE_WAITING_IMAGE: [
+                CallbackQueryHandler(handle_skip_image, pattern="^skip_image$"),
+                MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, receive_image)
+            ],
             STATE_WAITING_SLOT: [CallbackQueryHandler(receive_slot, pattern="^slot_")],
             STATE_REVIEW_QUIZ: [CallbackQueryHandler(handle_review_action)],
+            STATE_WAITING_SCHEDULED_DATE: [  # ADD THIS
+                CallbackQueryHandler(handle_schedule_choice, pattern="^schedule_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_scheduled_date)
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel_addquiz)],
         per_chat=True
@@ -294,7 +312,7 @@ def main():
     application.add_handler(PollAnswerHandler(handle_poll_answer))
     
     # Set up scheduler
-    #setup_scheduler(application)
+    setup_scheduler(application)
     
     # Start the bot
     logger.info("Starting bot...")
