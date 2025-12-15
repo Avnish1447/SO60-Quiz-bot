@@ -4,7 +4,24 @@ A fully automated Telegram bot that posts daily quizzes, tracks student response
 
 ## Features
 
-### 🆕 What's New in v2.0
+### 🆕 What's New in v3.0
+
+📅 **Scheduled Quiz Posting**
+- Schedule quizzes for specific dates (up to 7 days in advance)
+- Automatic date validation (no past dates, max 7 days future)
+- Scheduler prioritizes quizzes with matching scheduled dates
+
+⚡ **Post Immediately**
+- New "Post Immediately" option when adding quizzes
+- Instantly posts quiz to group after creation
+- Perfect for surprise quizzes or urgent content
+
+🖼️ **Optional Quiz Images**
+- "Skip Image" button during quiz creation
+- Create text-only quizzes without images
+- Flexible quiz formatting options
+
+### What's New in v2.0
 
 ⏰ **Dynamic Slot Management**
 - Add, edit, and delete quiz time slots on the fly
@@ -22,7 +39,7 @@ A fully automated Telegram bot that posts daily quizzes, tracks student response
 
 ✅ **Automated Quiz Posting**
 - Customizable quiz slots (default: 9 AM and 6 PM IST)
-- Each quiz includes question text, image, and 4 options
+- Each quiz includes question text, optional image, and 4 options
 - Uses Telegram's native quiz polls
 
 ✅ **Smart Response Tracking**
@@ -41,10 +58,10 @@ A fully automated Telegram bot that posts daily quizzes, tracks student response
 - Single message format for easy reading
 
 ✅ **Admin Commands**
-- `/addquiz` - Interactive quiz addition with review/edit before saving
+- `/addquiz` - Add quiz with scheduling options (specific date/next slot/immediate)
 - `/editquiz` - Edit existing quiz questions
 - `/viewquiz` - View quiz list with navigation (Previous/Next/Edit/Delete buttons)
-- `/editslots` - **NEW in v2.0** - Manage quiz time slots dynamically
+- `/editslots` - Manage quiz time slots dynamically
 - `/menu` - Interactive button menu with emoji icons
 - `/day` - View detailed daily statistics
 - `/week` - View detailed weekly statistics
@@ -342,4 +359,7 @@ For issues or questions, please check:
 1. This README
 2. The `.env.example` file for configuration
 3. Console logs for error messages
+
 ---
+
+**Built with ❤️ for JEE Simplified**
