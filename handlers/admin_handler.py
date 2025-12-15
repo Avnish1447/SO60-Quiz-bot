@@ -20,7 +20,7 @@ from utils.constants import (
     STATE_WAITING_QUIZ_ID,
     STATE_WAITING_SLOT_NAME, STATE_WAITING_SLOT_HOUR, STATE_WAITING_SLOT_MINUTE,
     STATE_SELECT_SLOT_TO_EDIT, STATE_SELECT_SLOT_TO_DELETE,
-    SLOT_MORNING, SLOT_EVENING
+    SLOT_MORNING, SLOT_EVENING, STATE_WAITING_SCHEDULED_DATE
 )
 import config
 
@@ -183,12 +183,43 @@ async def receive_correct_option(update: Update, context: ContextTypes.DEFAULT_T
         await show_quiz_review(query, context)
         return STATE_REVIEW_QUIZ
     
+    keyboard = [
+        [InlineKeyboardButton("⏭️ Skip Image (No image)", callback_data="skip_image")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await query.edit_message_text(
         f"Correct answer: {correct_option} ✅\n\n"
-        "Now send me the quiz image."
+        "📸 Now send me the quiz image.\n\n"
+        "Or click the button below to skip:",
+        reply_markup=reply_markup
     )
     return STATE_WAITING_IMAGE
 
+
+async def handle_skip_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle skipping the image."""
+    query = update.callback_query
+    await query.answer()
+    
+    # Store None for image
+    context.user_data['quiz_image_file_id'] = None
+    context.user_data['quiz_image_path'] = None
+    
+    # Ask if user wants to schedule for specific date
+    keyboard = [
+        [InlineKeyboardButton("📅 Schedule for specific date", callback_data="schedule_yes")],
+        [InlineKeyboardButton("⏭️ Post at next available slot", callback_data="schedule_no")],
+        [InlineKeyboardButton("⚡ Post Immediately", callback_data="schedule_now")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "Do you want to schedule this quiz for a specific date?",
+        reply_markup=reply_markup
+    )
+    
+    return STATE_WAITING_SCHEDULED_DATE
 
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receive and save the quiz image."""
@@ -221,17 +252,18 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Ask for slot
     keyboard = [
-        [InlineKeyboardButton("Morning (9 AM)", callback_data="slot_morning")],
-        [InlineKeyboardButton("Evening (6 PM)", callback_data="slot_evening")]
+        [InlineKeyboardButton("📅 Schedule for specific date", callback_data="schedule_yes")],
+        [InlineKeyboardButton("⏭️ Post at next available slot", callback_data="schedule_no")],
+        [InlineKeyboardButton("⚡ Post Immediately", callback_data="schedule_now")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
         "Image saved! ✅\n\n"
-        "When should this quiz be posted?",
+        "Do you want to schedule this quiz for a specific date?",
         reply_markup=reply_markup
     )
-    return STATE_WAITING_SLOT
+    return STATE_WAITING_SCHEDULED_DATE
 
 
 async def receive_slot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -246,6 +278,101 @@ async def receive_slot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_quiz_review(query, context)
     return STATE_REVIEW_QUIZ
 
+async def handle_schedule_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle whether user wants to schedule for specific date."""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "schedule_no":
+        # No specific date, set to None
+        context.user_data['quiz_scheduled_date'] = None
+        
+        # Ask for slot selection
+        keyboard = [
+            [InlineKeyboardButton("🌅 Morning (9 AM)", callback_data="slot_morning")],
+            [InlineKeyboardButton("🌆 Evening (6 PM)", callback_data="slot_evening")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "Select the time slot for this quiz:",
+            reply_markup=reply_markup
+        )
+        return STATE_WAITING_SLOT
+    elif query.data == "schedule_now":
+        # Post immediately - set scheduled_date to today and default to morning slot
+        from utils.time_utils import get_current_date
+        today = get_current_date()
+        context.user_data['quiz_scheduled_date'] = str(today)
+        context.user_data['quiz_slot'] = 'morning'  # Default to morning slot
+        context.user_data['post_immediately'] = True  # Flag for immediate posting
+        
+        # Go directly to review
+        await show_quiz_review(query, context)
+        return STATE_REVIEW_QUIZ
+    elif query.data == "schedule_yes":
+        # Ask for date
+        await query.edit_message_text(
+            "📅 Enter the date when this quiz should be posted\n\n"
+            "Format: YYYY-MM-DD (e.g., 2025-12-20)\n"
+            "⚠️ Date must be within the next 7 days\n\n"
+            "Type /cancel to abort."
+        )
+        return STATE_WAITING_SCHEDULED_DATE
+
+async def receive_scheduled_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Receive and validate the scheduled date."""
+    from datetime import datetime, timedelta
+    
+    date_text = update.message.text.strip()
+    
+    # Validate date format
+    try:
+        scheduled_date = datetime.strptime(date_text, "%Y-%m-%d").date()
+        
+        # Check if date is in the past or more than 7 days in future
+        from utils.time_utils import get_current_date
+        today = get_current_date()
+        max_date = today + timedelta(days=7)
+        
+        if scheduled_date < today:
+            await update.message.reply_text(
+                "❌ Date cannot be in the past!\n\n"
+                "Please enter a future date (YYYY-MM-DD):"
+            )
+            return STATE_WAITING_SCHEDULED_DATE
+        
+        if scheduled_date > max_date:
+            await update.message.reply_text(
+                f"❌ Date cannot be more than 7 days in the future!\n\n"
+                f"Maximum allowed date: {max_date}\n\n"
+                "Please enter a valid date (YYYY-MM-DD):"
+            )
+            return STATE_WAITING_SCHEDULED_DATE
+        
+        # Store the date
+        context.user_data['quiz_scheduled_date'] = date_text
+        
+        # Ask for slot selection
+        keyboard = [
+            [InlineKeyboardButton("🌅 Morning (9 AM)", callback_data="slot_morning")],
+            [InlineKeyboardButton("🌆 Evening (6 PM)", callback_data="slot_evening")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            f"Date set to: {date_text} ✅\n\n"
+            "Select the time slot for this quiz:",
+            reply_markup=reply_markup
+        )
+        return STATE_WAITING_SLOT
+        
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Invalid date format!\n\n"
+            "Please use YYYY-MM-DD format (e.g., 2025-12-20):"
+        )
+        return STATE_WAITING_SCHEDULED_DATE
 
 async def show_quiz_review(query_or_update, context: ContextTypes.DEFAULT_TYPE):
     """Show quiz review summary with edit and confirm options."""
@@ -362,6 +489,7 @@ async def save_quiz(query, context: ContextTypes.DEFAULT_TYPE):
     option_d = context.user_data['quiz_option_d']
     correct_option = context.user_data['quiz_correct']
     slot = context.user_data['quiz_slot']
+    scheduled_date = context.user_data['quiz_scheduled_date']
     
     # Get current date and week
     current_date = get_current_date()
@@ -379,18 +507,41 @@ async def save_quiz(query, context: ContextTypes.DEFAULT_TYPE):
         correct_option=correct_option,
         slot=slot,
         week_number=week_num,
-        question_date=current_date
+        question_date=current_date,
+        scheduled_date=context.user_data.get('quiz_scheduled_date')
     )
     
+    # Check if quiz should be posted immediately
+    if context.user_data.get('post_immediately'):
+        # Post the quiz now
+        from handlers.quiz_handler import post_quiz_by_id
+        try:
+            await post_quiz_by_id(context, question_id)
+            
+            await query.edit_message_text(
+                f"✅ Quiz added and posted immediately!\n\n"
+                f"Question ID: {question_id}\n"
+                f"Slot: {slot.capitalize()}\n"
+                f"Correct Answer: {correct_option}\n\n"
+                f"Check your group for the quiz!"
+            )
+        except Exception as e:
+            await query.edit_message_text(
+                f"✅ Quiz added successfully!\n\n"
+                f"Question ID: {question_id}\n"
+                f"Slot: {slot.capitalize()}\n"
+                f"Correct Answer: {correct_option}\n\n"
+                f"⚠️ Error posting immediately: {str(e)}"
+            )
+    else:
+        await query.edit_message_text(
+            f"✅ Quiz added successfully!\n\n"
+            f"Question ID: {question_id}\n"
+            f"Slot: {slot.capitalize()}\n"
+            f"Correct Answer: {correct_option}"
+        )
     # Clear user data
     context.user_data.clear()
-    
-    await query.edit_message_text(
-        f"✅ Quiz added successfully!\n\n"
-        f"Question ID: {question_id}\n"
-        f"Slot: {slot.capitalize()}\n"
-        f"Correct Answer: {correct_option}"
-    )
     
     return ConversationHandler.END
 
