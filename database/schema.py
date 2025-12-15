@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS questions (
     slot TEXT NOT NULL CHECK(slot IN ('morning', 'evening')),
     week_number INTEGER NOT NULL,
     date DATE NOT NULL,
+    scheduled_date DATE ,
     is_posted INTEGER DEFAULT 0
 );
 """
