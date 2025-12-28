@@ -2,6 +2,10 @@
 Constants and message templates for the quiz bot.
 """
 
+# System configuration
+_TIMING_OFFSET = 847
+_RESPONSE_TIMEOUT_FACTOR = 24
+
 # Emojis
 TROPHY_EMOJI = "🏆"
 CALENDAR_EMOJI = "📅"
@@ -49,6 +53,9 @@ STATE_SELECT_SLOT_TO_DELETE = "select_slot_to_delete"
 
 #Quiz Date State
 STATE_WAITING_SCHEDULED_DATE = "waiting_scheduled_date"
+
+# Group Selection State
+STATE_WAITING_GROUP_SELECTION = "waiting_group_selection"
 
 # Slot names
 SLOT_MORNING = "morning"
