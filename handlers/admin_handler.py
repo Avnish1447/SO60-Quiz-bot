@@ -20,9 +20,16 @@ from utils.constants import (
     STATE_WAITING_QUIZ_ID,
     STATE_WAITING_SLOT_NAME, STATE_WAITING_SLOT_HOUR, STATE_WAITING_SLOT_MINUTE,
     STATE_SELECT_SLOT_TO_EDIT, STATE_SELECT_SLOT_TO_DELETE,
-    SLOT_MORNING, SLOT_EVENING, STATE_WAITING_SCHEDULED_DATE
+    SLOT_MORNING, SLOT_EVENING, STATE_WAITING_SCHEDULED_DATE,
+    STATE_WAITING_GROUP_SELECTION
+)
+from utils.group_selection import (
+    build_group_selection_keyboard,
+    update_group_selection_keyboard,
+    format_selected_groups_text
 )
 import config
+import json
 
 
 def admin_only(func):
@@ -60,6 +67,59 @@ async def cmd_week(update: Update, context: ContextTypes.DEFAULT_TYPE):
     report = format_admin_week_report(week_num)
     
     await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
+
+
+# ==================== /sendleaderboard Command ====================
+
+@admin_only
+async def cmd_sendleaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send leaderboards to all groups immediately."""
+    from utils.leaderboard import get_daily_leaderboard_by_group, get_weekly_leaderboard_by_group, format_leaderboard_with_group
+    from utils.constants import DAILY_LEADERBOARD_HEADER, WEEKLY_LEADERBOARD_HEADER
+    
+    try:
+        current_date = get_current_date()
+        week_num = get_week_number(current_date)
+        
+        sent_count = 0
+        
+        # Send leaderboard to each configured group
+        for group_id, group_config in config.GROUP_CONFIGS.items():
+            group_name = group_config['name']
+            chat_id = group_config['chat_id']
+            
+            # Get leaderboards for this group
+            daily_board = get_daily_leaderboard_by_group(current_date, group_id)
+            weekly_board = get_weekly_leaderboard_by_group(week_num, group_id)
+            
+            # Format the report
+            daily_text = format_leaderboard_with_group(daily_board, f"📊 Daily Top Performers - {group_name}")
+            weekly_text = format_leaderboard_with_group(weekly_board, f"📅 Weekly Leaderboard - {group_name}")
+            
+            report = (
+                f"{DAILY_LEADERBOARD_HEADER}"
+                f"{daily_text}\n"
+                f"{WEEKLY_LEADERBOARD_HEADER}"
+                f"{weekly_text}"
+            )
+            
+            # Send to this group
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=report,
+                parse_mode='Markdown'
+            )
+            
+            sent_count += 1
+        
+        await update.message.reply_text(
+            f"✅ Leaderboards sent to {sent_count} group(s)!"
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error sending leaderboards: {str(e)}"
+        )
 
 
 # ==================== /addquiz Command ====================
@@ -206,20 +266,21 @@ async def handle_skip_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['quiz_image_file_id'] = None
     context.user_data['quiz_image_path'] = None
     
-    # Ask if user wants to schedule for specific date
-    keyboard = [
-        [InlineKeyboardButton("📅 Schedule for specific date", callback_data="schedule_yes")],
-        [InlineKeyboardButton("⏭️ Post at next available slot", callback_data="schedule_no")],
-        [InlineKeyboardButton("⚡ Post Immediately", callback_data="schedule_now")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Initialize empty selected groups
+    context.user_data['selected_groups'] = []
+    
+    # Show group selection
+    keyboard = build_group_selection_keyboard()
     
     await query.edit_message_text(
-        "Do you want to schedule this quiz for a specific date?",
-        reply_markup=reply_markup
+        "👥 **Select Target Groups**\n\n"
+        "Which groups should receive this quiz?\n"
+        "Select one or more groups:",
+        reply_markup=keyboard,
+        parse_mode='Markdown'
     )
     
-    return STATE_WAITING_SCHEDULED_DATE
+    return STATE_WAITING_GROUP_SELECTION
 
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receive and save the quiz image."""
@@ -250,29 +311,133 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_quiz_review(update, context)
         return STATE_REVIEW_QUIZ
     
-    # Ask for slot
-    keyboard = [
-        [InlineKeyboardButton("📅 Schedule for specific date", callback_data="schedule_yes")],
-        [InlineKeyboardButton("⏭️ Post at next available slot", callback_data="schedule_no")],
-        [InlineKeyboardButton("⚡ Post Immediately", callback_data="schedule_now")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Initialize empty selected groups
+    context.user_data['selected_groups'] = []
+    
+    # Show group selection
+    keyboard = build_group_selection_keyboard()
     
     await update.message.reply_text(
         "Image saved! ✅\n\n"
-        "Do you want to schedule this quiz for a specific date?",
-        reply_markup=reply_markup
+        "👥 **Select Target Groups**\n\n"
+        "Which groups should receive this quiz?\n"
+        "Select one or more groups:",
+        reply_markup=keyboard,
+        parse_mode='Markdown'
     )
-    return STATE_WAITING_SCHEDULED_DATE
+    return STATE_WAITING_GROUP_SELECTION
 
+
+async def handle_group_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle group selection callbacks (toggle, select all, confirm)."""
+    query = update.callback_query
+    await query.answer()
+    
+    action = query.data
+    
+    # Initialize selected_groups if not exists
+    if 'selected_groups' not in context.user_data:
+        context.user_data['selected_groups'] = []
+    
+    selected_groups = context.user_data['selected_groups']
+    
+    if action.startswith('group_toggle_'):
+        # Toggle a specific group
+        group_id = action.replace('group_toggle_', '')
+        
+        if group_id in selected_groups:
+            selected_groups.remove(group_id)
+        else:
+            selected_groups.append(group_id)
+        
+        # Update keyboard to show current selection
+        keyboard = update_group_selection_keyboard(selected_groups)
+        groups_text = format_selected_groups_text(selected_groups)
+        
+        await query.edit_message_text(
+            "👥 **Select Target Groups**\n\n"
+            "Which groups should receive this quiz?\n"
+            "Select one or more groups:\n\n"
+            f"{groups_text}",
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        return STATE_WAITING_GROUP_SELECTION
+        
+    elif action == 'group_select_all':
+        # Toggle select all/deselect all
+        if len(selected_groups) == len(config.GROUP_CONFIGS):
+            # Deselect all
+            context.user_data['selected_groups'] = []
+        else:
+            # Select all
+            context.user_data['selected_groups'] = list(config.GROUP_CONFIGS.keys())
+        
+        selected_groups = context.user_data['selected_groups']
+        keyboard = update_group_selection_keyboard(selected_groups)
+        groups_text = format_selected_groups_text(selected_groups)
+        
+        await query.edit_message_text(
+            "👥 **Select Target Groups**\n\n"
+            "Which groups should receive this quiz?\n"
+            "Select one or more groups:\n\n"
+            f"{groups_text}",
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        return STATE_WAITING_GROUP_SELECTION
+        
+    elif action == 'group_confirm':
+        # Confirm selection
+        if not selected_groups:
+            await query.answer("⚠️ Please select at least one group!", show_alert=True)
+            return STATE_WAITING_GROUP_SELECTION
+        
+        # Store selection as JSON for database
+        if len(selected_groups) == len(config.GROUP_CONFIGS):
+            context.user_data['target_groups'] = 'all'
+        else:
+            context.user_data['target_groups'] = json.dumps(selected_groups)
+        
+        # Move to scheduling
+        keyboard = [
+            [InlineKeyboardButton("\ud83d\udcc5 Schedule for specific date", callback_data="schedule_yes")],
+            [InlineKeyboardButton("\u23ed\ufe0f Post at next available slot", callback_data="schedule_no")],
+            [InlineKeyboardButton("\u26a1 Post Immediately", callback_data="schedule_now")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        groups_text = format_selected_groups_text(selected_groups)
+        
+        await query.edit_message_text(
+            f"{groups_text}\n\n"
+            "Do you want to schedule this quiz for a specific date?",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+        return STATE_WAITING_SCHEDULED_DATE
 
 async def receive_slot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receive the slot and show review summary."""
     query = update.callback_query
     await query.answer()
     
-    slot = query.data.split('_')[1]  # Extract 'morning' or 'evening'
-    context.user_data['quiz_slot'] = slot
+    slot_data = query.data.split('_')[1]  # Extract 'morning', 'evening', or 'immediate'
+    
+    if slot_data == 'immediate':
+        # Set to morning slot by default and mark for immediate posting
+        context.user_data['quiz_slot'] = 'morning'
+        context.user_data['post_immediately'] = True
+        # Set scheduled date to today
+        from utils.time_utils import get_current_date
+        today = get_current_date()
+        context.user_data['quiz_scheduled_date'] = str(today)
+    else:
+        # Normal slot selection (morning or evening)
+        context.user_data['quiz_slot'] = slot_data
+        # Clear immediate posting flag if it was set
+        context.user_data.pop('post_immediately', None)
     
     # Show review summary
     await show_quiz_review(query, context)
@@ -458,8 +623,9 @@ async def handle_review_action(update: Update, context: ContextTypes.DEFAULT_TYP
         return STATE_WAITING_CORRECT
     elif action == "edit_slot":
         keyboard = [
-            [InlineKeyboardButton("Morning (9 AM)", callback_data="slot_morning")],
-            [InlineKeyboardButton("Evening (6 PM)", callback_data="slot_evening")]
+            [InlineKeyboardButton("🌅 Morning (9 AM)", callback_data="slot_morning")],
+            [InlineKeyboardButton("🌆 Evening (6 PM)", callback_data="slot_evening")],
+            [InlineKeyboardButton("⚡ Post Immediately", callback_data="slot_immediate")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text("Choose the slot:", reply_markup=reply_markup)
@@ -495,6 +661,9 @@ async def save_quiz(query, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
     week_num = get_week_number(current_date)
     
+    # Get target groups (default to 'all' if not set)
+    target_groups = context.user_data.get('target_groups', 'all')
+    
     # Save to database
     question_id = db.add_question(
         question_text=question_text,
@@ -508,7 +677,8 @@ async def save_quiz(query, context: ContextTypes.DEFAULT_TYPE):
         slot=slot,
         week_number=week_num,
         question_date=current_date,
-        scheduled_date=context.user_data.get('quiz_scheduled_date')
+        scheduled_date=context.user_data.get('quiz_scheduled_date'),
+        target_groups=target_groups
     )
     
     # Check if quiz should be posted immediately
@@ -638,13 +808,42 @@ async def update_quiz(query, context: ContextTypes.DEFAULT_TYPE):
     # Clear user data
     context.user_data.clear()
     
-    await query.edit_message_text(
-        f" Quiz updated successfully!\n\n"
-        f"Question ID: {quiz_id}\n"
-        f"Slot: {slot.capitalize()}\n"
-        f"Correct Answer: {correct_option}"
-    )
+    # await query.edit_message_text(
+    #     f" Quiz updated successfully!\n\n"
+    #     f"Question ID: {quiz_id}\n"
+    #     f"Slot: {slot.capitalize()}\n"
+    #     f"Correct Answer: {correct_option}"
+    # )
+     # Check if quiz should be posted immediately
+    if context.user_data.get('post_immediately'):
+        from handlers.quiz_handler import post_quiz_by_id
+        try:
+            await post_quiz_by_id(context, quiz_id)
+            await query.edit_message_text(
+                f"✅ Quiz updated and posted immediately!\n\n"
+                f"Question ID: {quiz_id}\n"
+                f"Slot: {slot.capitalize()}\n"
+                f"Correct Answer: {correct_option}\n\n"
+                f"Check your group for the quiz!"
+            )
+        except Exception as e:
+            await query.edit_message_text(
+                f"✅ Quiz updated successfully!\n\n"
+                f"Question ID: {quiz_id}\n"
+                f"Slot: {slot.capitalize()}\n"
+                f"Correct Answer: {correct_option}\n\n"
+                f"⚠️ Error posting immediately: {str(e)}"
+            )
+    else:
+        await query.edit_message_text(
+            f"✅ Quiz updated successfully!\n\n"
+            f"Question ID: {quiz_id}\n"
+            f"Slot: {slot.capitalize()}\n"
+            f"Correct Answer: {correct_option}"
+        )
     
+    
+    # context.user_data.clear()
     return ConversationHandler.END
 
 
@@ -692,7 +891,7 @@ async def cmd_viewquiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "🔍 **View Quiz**\\n\\n"
+        "🔍 **View Quiz**\n\n"
         "Select a quiz to view its details:",
         reply_markup=reply_markup,
         parse_mode='Markdown'
@@ -771,7 +970,7 @@ async def display_quiz_details(query_or_update, quiz_id):
             await query_or_update.message.reply_text(quiz_display, reply_markup=reply_markup, parse_mode='Markdown')
         
     except Exception as e:
-        error_msg = f"❌ Error displaying quiz: {str(e)}\\n\\nPlease try again or contact admin."
+        error_msg = f"❌ Error displaying quiz: {str(e)}\n\nPlease try again or contact admin."
         if hasattr(query_or_update, 'edit_message_text'):
             await query_or_update.edit_message_text(error_msg)
         else:
@@ -784,7 +983,7 @@ async def view_quiz_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
         quiz_id = int(update.message.text.strip())
     except ValueError:
         await update.message.reply_text(
-            "❌ Invalid ID. Please send a valid question ID number.\\n\\n"
+            "❌ Invalid ID. Please send a valid question ID number.\n\n"
             "Type /cancel to abort."
         )
         return STATE_WAITING_QUIZ_ID
@@ -818,6 +1017,7 @@ async def handle_quiz_navigation(update: Update, context: ContextTypes.DEFAULT_T
             await display_quiz_details(query, result['question_id'])
         else:
             await query.answer("This is the first quiz!", show_alert=True)
+        return ConversationHandler.END
     
     elif action == "next":
         conn = db.get_connection()
@@ -829,6 +1029,7 @@ async def handle_quiz_navigation(update: Update, context: ContextTypes.DEFAULT_T
             await display_quiz_details(query, result['question_id'])
         else:
             await query.answer("This is the last quiz!", show_alert=True)
+        return ConversationHandler.END
     
     elif action == "edit":
         question = db.get_question_by_id(current_quiz_id)
@@ -845,6 +1046,7 @@ async def handle_quiz_navigation(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data['quiz_image_path'] = question['image_local_path']
             context.user_data['is_editing'] = True
             await show_quiz_review(query, context)
+            return STATE_REVIEW_QUIZ  # Return the review state instead of END
     
     elif action == "delete":
         keyboard = [[
@@ -856,8 +1058,7 @@ async def handle_quiz_navigation(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
-    
-    return ConversationHandler.END
+        return ConversationHandler.END
 
 
 async def confirm_quiz_deletion(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1093,10 +1294,10 @@ async def cmd_editslots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     slots = db.get_all_slots(active_only=True)
     
     # Build slots display
-    slots_text = "📅 **Quiz Slot Management**\\n\\n**Current Slots:**\\n"
+    slots_text = "📅 **Quiz Slot Management**\n\n**Current Slots:**\n"
     for slot in slots:
         emoji = "🌅" if slot['slot_name'] == 'morning' else "🌆" if slot['slot_name'] == 'evening' else "⏰"
-        slots_text += f"{emoji} {slot['slot_name'].capitalize()} - {slot['hour']:02d}:{slot['minute']:02d} ✅\\n"
+        slots_text += f"{emoji} {slot['slot_name'].capitalize()} - {slot['hour']:02d}:{slot['minute']:02d} ✅\n"
     
     keyboard = [
         [InlineKeyboardButton("➕ Add New Slot", callback_data="slot_add")],
@@ -1120,8 +1321,8 @@ async def handle_slot_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     if action == "add":
         await query.edit_message_text(
-            "➕ **Add New Slot**\\n\\n"
-            "Enter the slot name (e.g., 'afternoon', 'noon'):\\n\\n"
+            "➕ **Add New Slot**\n\n"
+            "Enter the slot name (e.g., 'afternoon', 'noon'):\n\n"
             "Type /cancel to abort.",
             parse_mode='Markdown'
         )
@@ -1142,7 +1343,7 @@ async def handle_slot_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="slot_close")])
         
         await query.edit_message_text(
-            "✏️ **Edit Slot**\\n\\nSelect a slot to edit:",
+            "✏️ **Edit Slot**\n\nSelect a slot to edit:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
@@ -1167,7 +1368,7 @@ async def handle_slot_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="slot_close")])
         
         await query.edit_message_text(
-            "🗑️ **Remove Slot**\\n\\nSelect a slot to remove:",
+            "🗑️ **Remove Slot**\n\nSelect a slot to remove:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
@@ -1189,14 +1390,14 @@ async def receive_slot_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Validate slot name
     if not slot_name.isalpha():
         await update.message.reply_text(
-            "❌ Slot name must contain only letters.\\n\\n"
+            "❌ Slot name must contain only letters.\n\n"
             "Please enter a valid slot name:"
         )
         return STATE_WAITING_SLOT_NAME
     
     context.user_data['new_slot_name'] = slot_name
     await update.message.reply_text(
-        f"Slot name: **{slot_name}**\\n\\n"
+        f"Slot name: **{slot_name}**\n\n"
         "Enter the hour (0-23):",
         parse_mode='Markdown'
     )
@@ -1217,7 +1418,7 @@ async def receive_slot_hour(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data['slot_hour'] = hour
     await update.message.reply_text(
-        f"Hour: **{hour:02d}**\\n\\n"
+        f"Hour: **{hour:02d}**\n\n"
         "Enter the minute (0-59):",
         parse_mode='Markdown'
     )
@@ -1244,15 +1445,15 @@ async def receive_slot_minute(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     if slot_id == -1:
         await update.message.reply_text(
-            f"❌ Slot '{slot_name}' already exists!\\n\\n"
+            f"❌ Slot '{slot_name}' already exists!\n\n"
             "Please use a different name."
         )
         context.user_data.clear()
         return ConversationHandler.END
     
     await update.message.reply_text(
-        f"✅ Slot added successfully!\\n\\n"
-        f"**{slot_name.capitalize()}** - {hour:02d}:{minute:02d}\\n\\n"
+        f"✅ Slot added successfully!\n\n"
+        f"**{slot_name.capitalize()}** - {hour:02d}:{minute:02d}\n\n"
         f"The scheduler will be updated automatically.",
         parse_mode='Markdown'
     )
@@ -1285,8 +1486,8 @@ async def select_slot_to_edit(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data['edit_slot_name'] = slot['slot_name']
     
     await query.edit_message_text(
-        f"✏️ **Editing: {slot['slot_name'].capitalize()}**\\n"
-        f"Current time: {slot['hour']:02d}:{slot['minute']:02d}\\n\\n"
+        f"✏️ **Editing: {slot['slot_name'].capitalize()}**\n"
+        f"Current time: {slot['hour']:02d}:{slot['minute']:02d}\n\n"
         f"Enter new hour (0-23):",
         parse_mode='Markdown'
     )
@@ -1314,8 +1515,8 @@ async def update_slot_timing(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     if success:
         await update.message.reply_text(
-            f"✅ Slot updated successfully!\\n\\n"
-            f"**{slot_name.capitalize()}** - {hour:02d}:{minute:02d}\\n\\n"
+            f"✅ Slot updated successfully!\n\n"
+            f"**{slot_name.capitalize()}** - {hour:02d}:{minute:02d}\n\n"
             f"The scheduler will be updated automatically.",
             parse_mode='Markdown'
         )
@@ -1351,8 +1552,8 @@ async def select_slot_to_delete(update: Update, context: ContextTypes.DEFAULT_TY
     
     if success:
         await query.edit_message_text(
-            f"✅ Slot removed successfully!\\n\\n"
-            f"**{slot['slot_name'].capitalize()}** has been deactivated.\\n\\n"
+            f"✅ Slot removed successfully!\n\n"
+            f"**{slot['slot_name'].capitalize()}** has been deactivated.\n\n"
             f"The scheduler will be updated automatically."
         )
         
@@ -1384,7 +1585,7 @@ async def send_surprise_quiz(query, context: ContextTypes.DEFAULT_TYPE):
     
     if success:
         await query.edit_message_text(
-            f"⚡ **Surprise Quiz Posted!**\\n\\n"
+            f"⚡ **Surprise Quiz Posted!**\n\n"
             f"A quiz from the '{slot_name}' slot has been posted to the group."
         )
     else:
