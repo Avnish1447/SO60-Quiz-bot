@@ -26,8 +26,9 @@ from handlers.admin_handler import (
     select_slot_to_edit, update_slot_timing, select_slot_to_delete, cancel_slot_edit,
     handle_quiz_navigation, confirm_quiz_deletion,
     handle_schedule_choice, receive_scheduled_date,
-    handle_skip_image
+    handle_skip_image, handle_group_selection, cmd_sendleaderboard
 )
+# Initialize​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿ quiz system components
 from utils.constants import (
     STATE_WAITING_QUESTION, STATE_WAITING_IMAGE,
     STATE_WAITING_OPTION_A, STATE_WAITING_OPTION_B,
@@ -36,7 +37,7 @@ from utils.constants import (
     STATE_WAITING_QUIZ_ID,
     STATE_WAITING_SLOT_NAME, STATE_WAITING_SLOT_HOUR, STATE_WAITING_SLOT_MINUTE,
     STATE_SELECT_SLOT_TO_EDIT, STATE_SELECT_SLOT_TO_DELETE,
-    STATE_WAITING_SCHEDULED_DATE
+    STATE_WAITING_SCHEDULED_DATE, STATE_WAITING_GROUP_SELECTION
 )
 from scheduler.scheduler import setup_scheduler
 
@@ -188,6 +189,7 @@ async def post_init(application):
         BotCommand("editslots", "⏰ Manage quiz time slots"),
         BotCommand("day", "📊 View today's statistics"),
         BotCommand("week", "📅 View this week's statistics"),
+        BotCommand("sendleaderboard", "📊 Send leaderboard to group"),
     ]
     
     # Set default commands for all users
@@ -217,6 +219,7 @@ def main():
     application.add_handler(CommandHandler("menu", cmd_menu))
     application.add_handler(CommandHandler("day", cmd_day))
     application.add_handler(CommandHandler("week", cmd_week))
+    application.add_handler(CommandHandler("sendleaderboard", cmd_sendleaderboard))
     
     # Add menu callback handler
     application.add_handler(CallbackQueryHandler(handle_menu_callback, pattern="^menu_"))
@@ -235,9 +238,10 @@ def main():
                 CallbackQueryHandler(handle_skip_image, pattern="^skip_image$"),
                 MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, receive_image)
             ],
+            STATE_WAITING_GROUP_SELECTION: [CallbackQueryHandler(handle_group_selection, pattern="^group_")],
             STATE_WAITING_SLOT: [CallbackQueryHandler(receive_slot, pattern="^slot_")],
             STATE_REVIEW_QUIZ: [CallbackQueryHandler(handle_review_action)],
-            STATE_WAITING_SCHEDULED_DATE: [  # ADD THIS
+            STATE_WAITING_SCHEDULED_DATE: [
                 CallbackQueryHandler(handle_schedule_choice, pattern="^schedule_"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_scheduled_date)
             ],
@@ -275,6 +279,18 @@ def main():
                 CallbackQueryHandler(view_quiz_selection, pattern="^view_"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, view_quiz_details)
             ],
+            STATE_REVIEW_QUIZ: [CallbackQueryHandler(handle_review_action)],  # Add this state
+            STATE_WAITING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_question)],
+            STATE_WAITING_OPTION_A: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_option_a)],
+            STATE_WAITING_OPTION_B: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_option_b)],
+            STATE_WAITING_OPTION_C: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_option_c)],
+            STATE_WAITING_OPTION_D: [MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, receive_option_d)],
+            STATE_WAITING_CORRECT: [CallbackQueryHandler(receive_correct_option, pattern="^correct_")],
+            STATE_WAITING_IMAGE: [
+                CallbackQueryHandler(handle_skip_image, pattern="^skip_image$"),
+                MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, receive_image)
+            ],
+            STATE_WAITING_SLOT: [CallbackQueryHandler(receive_slot, pattern="^slot_")],
         },
         fallbacks=[CommandHandler("cancel", cancel_addquiz)],
         per_chat=True
