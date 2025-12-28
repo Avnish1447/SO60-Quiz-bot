@@ -63,3 +63,43 @@ def format_time_seconds(seconds: int) -> str:
     remaining_minutes = minutes % 60
     
     return f"{hours}h {remaining_minutes}m {remaining_seconds}s"
+
+
+def get_daily_leaderboard_by_group(target_date: date, group_id: str) -> List[Dict]:
+    """Get daily leaderboard for a specific group."""
+    return db.get_daily_leaderboard_by_group(target_date, group_id, config.LEADERBOARD_SIZE)
+
+
+def get_weekly_leaderboard_by_group(week_number: int, group_id: str) -> List[Dict]:
+    """Get weekly leaderboard for a specific group."""
+    return db.get_weekly_leaderboard_by_group(week_number, group_id, config.LEADERBOARD_SIZE)
+
+
+def format_leaderboard_with_group(leaderboard: List[Dict], group_name: str) -> str:
+    """
+    Format leaderboard data for a specific group.
+    
+    Args:
+        leaderboard: List of dicts with keys: user_id, username, score, total_time
+        group_name: Name of the group for the header
+    
+    Returns:
+        Formatted string with group name and rankings
+    """
+    if not leaderboard:
+        return f"**{group_name}**\nNo participants yet.\n"
+    
+    lines = [f"**{group_name}**"]
+    for idx, entry in enumerate(leaderboard):
+        rank = idx + 1
+        medal = MEDAL_EMOJIS[idx] if idx < len(MEDAL_EMOJIS) else f"{rank}."
+        username = entry.get('username') or f"User {entry['user_id']}"
+        score = entry['score']
+        
+        # Format username with @ if it doesn't have it
+        if username and not username.startswith('@'):
+            username = f"@{username}"
+        
+        lines.append(f"{medal} {username} - {score} pts")
+    
+    return "\n".join(lines) + "\n"
