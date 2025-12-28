@@ -51,18 +51,18 @@ class DatabaseManager:
     def add_question(self, question_text: str, image_file_id: str, image_local_path: str,
                     option_a: str, option_b: str, option_c: str, option_d: str,
                     correct_option: str, slot: str, week_number: int, 
-                    question_date: date,scheduled_date=None) -> int:
-        """Add a new question to the database."""
+                    question_date: date, scheduled_date=None, target_groups='all') -> int:
+        """Add a new question to the database with target groups."""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         cursor.execute("""
             INSERT INTO questions 
             (question_text, image_file_id, image_local_path, option_a, option_b, 
-             option_c, option_d, correct_option, slot, week_number, date, scheduled_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             option_c, option_d, correct_option, slot, week_number, date, scheduled_date, target_groups)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (question_text, image_file_id, image_local_path, option_a, option_b, 
-              option_c, option_d, correct_option, slot, week_number, question_date, scheduled_date))
+              option_c, option_d, correct_option, slot, week_number, question_date, scheduled_date, target_groups))
         
         question_id = cursor.lastrowid
         conn.commit()
@@ -135,8 +135,8 @@ class DatabaseManager:
     
     def add_response(self, user_id: int, username: str, question_id: int,
                     selected_option: str, is_correct: int, response_time: datetime,
-                    time_taken: int, week_number: int, response_date: date) -> bool:
-        """Add a user response. Returns True if successful, False if duplicate."""
+                    time_taken: int, week_number: int, response_date: date, group_id: str = 'group1') -> bool:
+        """Add a user response with group tracking. Returns True if successful, False if duplicate."""
         conn = self.get_connection()
         cursor = conn.cursor()
         
@@ -144,10 +144,10 @@ class DatabaseManager:
             cursor.execute("""
                 INSERT INTO responses 
                 (user_id, username, question_id, selected_option, is_correct, 
-                 response_time, time_taken, week_number, date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 response_time, time_taken, week_number, date, group_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (user_id, username, question_id, selected_option, is_correct,
-                  response_time, time_taken, week_number, response_date))
+                  response_time, time_taken, week_number, response_date, group_id))
             
             conn.commit()
             conn.close()
@@ -384,6 +384,87 @@ class DatabaseManager:
         if row:
             return dict(row)
         return None
+    
+    # ==================== Multi-Group Operations ====================
+    
+    def create_quiz_post(self, question_id: int, group_id: str, poll_id: str, posted_time: datetime) -> int:
+        """Record a quiz post to a specific group."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO quiz_posts (question_id, group_id, poll_id, posted_time)
+            VALUES (?, ?, ?, ?)
+        """, (question_id, group_id, poll_id, posted_time))
+        
+        post_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return post_id
+    
+    def get_post_by_poll_id(self, poll_id: str) -> Optional[Dict]:
+        """Get quiz post information by poll_id."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM quiz_posts
+            WHERE poll_id = ?
+        """, (poll_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return dict(row)
+        return None
+    
+    def get_daily_leaderboard_by_group(self, target_date: date, group_id: str, limit: int = 5) -> List[Dict]:
+        """Get daily leaderboard for a specific group."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                user_id,
+                username,
+                SUM(is_correct) as score,
+                SUM(time_taken) as total_time
+            FROM responses
+            WHERE date = ? AND group_id = ?
+            GROUP BY user_id, username
+            ORDER BY score DESC, total_time ASC
+            LIMIT ?
+        """, (target_date, group_id, limit))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def get_weekly_leaderboard_by_group(self, week_number: int, group_id: str, limit: int = 5) -> List[Dict]:
+        """Get weekly leaderboard for a specific group."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                user_id,
+                username,
+                SUM(is_correct) as score,
+                SUM(time_taken) as total_time
+            FROM responses
+            WHERE week_number = ? AND group_id = ?
+            GROUP BY user_id, username
+            ORDER BY score DESC, total_time ASC
+            LIMIT ?
+        """, (week_number, group_id, limit))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
 
 
 # Global database instance
